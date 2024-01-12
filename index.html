@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Document</title>
+    </head>
+    <body>
+        <div class="wrapper">
+            <div class="wrapper-input">
+                <input type="text" name="groupName" id="group-name" />
+                <input type="text" name="userName" id="user-name" />
+                <input type="text" name="password" id="password" />
+
+                <button class="btn-submit">Submit</button>
+            </div>
+
+            <div class="wrapper-list">
+                <div class="title"><h1>Danh sách nhóm</h1></div>
+                <div class="content">
+                    <ul class="group-name-list"></ul>
+                    <ul class="group-user-list"></ul>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@5.0.12/dist/browser/signalr.min.js"></script>
+
+        <script>
+            $(document).ready(function () {
+                // Biến toàn cục
+                let jwtToken = sessionStorage.getItem("accessToken");
+                let groupName = "";
+                let isShow = false;
+
+                //Khởi tạo kết nối socket
+
+                const connection = new signalR.HubConnectionBuilder()
+                    .withUrl("https://localhost:5001/hub/messageHub", {
+                        accessTokenFactory: () => jwtToken,
+                        withCredentials: true,
+                    })
+                    .configureLogging(signalR.LogLevel.Information)
+                    .build();
+
+                // Lắng nghe server
+
+                connection.on("NotifyLoggedInUsers", function (groupUsers, groupUserCount) {
+                    console.log(`NotifyLoggedInUsers: ${groupUsers}`);
+                });
+
+                connection.on("NotifyNewUserLoggedIn", function (groupUsers, groupUserCount) {
+                    showGroupName(groupUsers);
+                    if(isShow){
+                        showUser(JSON.parse(groupUsers));
+                    }
+                    console.log(`NotifyNewUserLoggedIn: ${groupUsers}`);
+                });
+
+                // Mở kết nối đến server
+                var connectionId;
+
+                $(".btn-submit").on("click", function () {
+                    let group = $("#group-name").val();
+                    let user = $("#user-name").val();
+                    let pass = $("#password").val();
+
+                    groupName = group;
+
+                    console.log(`gr : ${group}`, `u: ${user}`, `p: ${pass}`);
+                    $.ajax({
+                        url: "https://localhost:5001/api/Auth/login",
+                        method: "POST",
+                        contentType: "application/json",
+                        data: JSON.stringify({ userName: user, password: pass, group: group, connectId: connectionId }),
+                        success: function (data) {
+                            const accessToken = data.token;
+                            sessionStorage.setItem("accessToken", accessToken);
+                            jwtToken = data.token;
+                            connection
+                                .start()
+                                .then(() => {
+                                    connection.invoke("Subscribe", group);
+                                })
+                                .catch(function (err) {
+                                    return console.error(err.toString(), 2);
+                                });
+                            console.log(data.token);
+                        },
+                    });
+                });
+
+                function showGroupName(groupUsers){
+                    groupUsers = JSON.parse(groupUsers);
+                    $(".group-name-list").html("");
+                    groupUsers.map((group)=>{
+                        const str = `
+                        <li  data-groupName=${group.groupName} class="groupName">
+                            ${group.groupName}
+                        </li>`;
+                        $(".group-name-list").append(str);
+
+                        $(".groupName").click(function(){
+                            groupName = $(this).attr("data-groupName");
+                        
+                            if(group.groupName === groupName){
+                                isShow = !isShow;
+                                $(this).attr("show",isShow)
+                                isShow = $(this).attr("show") === "true";
+
+                                if(isShow === true){
+                                    showUser(group);  
+                                }
+                                if(isShow === false){
+                                    $(".group-user-list").html("");
+                                }
+                            }
+                            
+                        })
+                    })
+                    
+                }
+
+                function showUser(groupUsers){
+                    
+                    const usersUnit = new Set(groupUsers.users.map(user => user.userId));
+                    const usersUnique = Array.from(usersUnit).map(userId => groupUsers.users.find(user => user.userId === userId) );
+                    
+                    let str;
+                    $(".group-user-list").html("");
+
+                    usersUnique.map((user) => {
+                        str = `<li>${user.userName}</li>`;
+                        $(".group-user-list").append(str);
+                    });
+                }
+
+            });
+        </script>
+    </body>
+</html>

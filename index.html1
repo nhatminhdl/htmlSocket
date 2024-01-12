@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Document</title>
+    </head>
+    <body>
+        <div id="login">
+            <input type="text" class="group-name" name="group-name" />
+            <div class="user-name">
+                <input type="text" class="user" name="user" />
+            </div>
+            <div class="password">
+                <input type="text" class="pass" name="pass" />
+            </div>
+            <button class="submit-login">Login</button>
+        </div>
+        <div id="groups-container">
+            <ul id="group-list"></ul>
+        </div>
+
+        <div id="group-details-container">
+            <h3>Group Details</h3>
+            <p id="group-info"></p>
+            <ul id="user-list"></ul>
+        </div>
+
+        <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@5.0.12/dist/browser/signalr.min.js"></script>
+
+        <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@5.0.12/dist/browser/signalr.min.js"></script>
+
+        <script>
+
+                let yourJwtToken = sessionStorage.getItem("accessToken");
+      
+                let groupNameClient= "";
+                let groupNameSession = sessionStorage.getItem("groupNameSession");
+
+                var connection = new signalR.HubConnectionBuilder()
+                    .withUrl("https://localhost:5001/hub/messageHub", {
+                        accessTokenFactory: () => yourJwtToken,
+                        withCredentials: true,
+                    })
+
+                    .configureLogging(signalR.LogLevel.Information)
+                    .build();
+
+                connection.on("SubscribeSuccess", function (groupName) {
+                    console.log(`Successfully subscribed to group ${groupName}`);
+                });
+
+                connection.on("SubscribeFailed", function (error) {
+                    console.error(`Subscription failed: ${error}`);
+                });
+
+                connection.on("NotifyNewUserLoggedIn", function (groupUsers, groupUserCount, role) {
+                    console.log(`New user joined: ${groupUsers.users}`);
+                    groupUsers = JSON.parse(groupUsers);
+                    updateGroupList(groupUsers, groupUserCount);
+                    showGroupDetails('group1', groupUsers);
+                    updateDetail('group1',groupUsers);
+                    
+                });
+
+                connection.on("NotifyLoggedInUsers", function (groupUsers, groupUserCount, role) {
+                    console.log(`New user joined: ${groupUsers}`);
+                    groupUsers = JSON.parse(groupUsers);
+                    updateGroupList(groupUsers, groupUserCount);
+                    showGroupDetails('group1', groupUsers)
+
+                });
+
+                
+
+                connection
+                    .start()
+                    .then(function () {
+                        // Join a group when the page is loaded
+                        connection.invoke("Subscribe", groupNameSession).catch(function (err) {
+                            console.log(err);
+                            return console.error(err.toString());
+                        });
+ 
+                    })
+                    .catch(function (err) {
+                        return console.error(err.toString(), 2);
+                    });
+                    
+            $(document).ready(function () {
+            
+
+                $(".submit-login").on("click", function (e) {
+                    e.preventDefault();
+                    const user = $(".user").val();
+                    const pass = $(".pass").val();
+                    groupNameSession = $(".group-name").val();
+
+                    $.ajax({
+                        url: "https://localhost:5001/api/Auth/login",
+                        method: "POST",
+                        contentType: "application/json",
+                        data: JSON.stringify({ userName: user, password: pass, groupName: $(".group-name").val() }),
+                        success: function (data) {
+                            const accessToken = data.token;
+                            sessionStorage.setItem("accessToken", accessToken);
+                            sessionStorage.setItem("groupNameSession", groupNameSession);
+                            connection.invoke("Subscribe", 'group1').catch(function (err) {
+                                console.log(err);
+                                return console.error(err.toString());
+                            });
+                            console.log(data.token);
+                        },
+                    });
+                });
+            });
+
+            function updateGroupList(groupUsers, groupUserCount) {
+                var groupList = document.getElementById("group-list");
+                groupList.innerHTML = "";
+
+            
+
+                groupUsers.forEach(function (group) {
+                    console.log(group.GroupName);
+                    var listItem = document.createElement("li");
+                    listItem.textContent = group.GroupName// + " (" + groupUserCount[group.groupName] + " users)";
+                    listItem.onclick = function () {
+                        showGroupDetails($(this).text(),group);
+                        sessionStorage.setItem("groupNameSession", groupNameClient);
+                    };
+                    groupList.appendChild(listItem);
+                });
+            }
+
+            function showGroupDetails(groupName, groupUsers) {
+                var groupInfo = document.getElementById("group-info");
+                var userList = document.getElementById("user-list");
+                var groupDetailsContainer = document.getElementById("group-details-container");
+
+                
+                
+                groupInfo.textContent = "Group: " + groupName;
+
+                // Display the list of users in the selected group
+                userList.innerHTML = "";
+               
+
+                console.log('show-group-detail', groupUsers.GroupName === groupNameSession);
+
+                if(groupUsers.GroupName === 'group1'){
+                    let usersInGroup = new Set(groupUsers.Users.map((user) => user.UserId));
+                   
+                    let uniqueUsers = Array.from(usersInGroup).map(
+                        (userId) => groupUsers.Users.find((user) => user.UserId === userId)
+                    );
+                    console.log('show-detail', uniqueUsers)
+                       
+                        uniqueUsers.forEach(function (user) {
+                            var listItem = document.createElement("li");
+                            listItem.textContent = user.UserName;
+                            userList.appendChild(listItem);
+                        });
+
+                        
+                }
+                
+
+                // Show the container with group details
+                groupDetailsContainer.style.display = "block";
+            }
+
+            function updateDetail(groupName, groupUsers){
+                var userList = document.getElementById("user-list");
+                if(groupUsers.GroupName === 'group1'){
+                    let usersInGroup = new Set(groupUsers.Users.map((user) => user.UserId));
+                   
+                    let uniqueUsers = Array.from(usersInGroup).map(
+                        (userId) => groupUsers.Users.find((user) => user.UserId === userId)
+                    );
+                       
+                        uniqueUsers.forEach(function (user) {
+                            var listItem = document.createElement("li");
+                            listItem.textContent = user.UserName;
+                            userList.appendChild(listItem);
+                        });
+
+                    }
+            }
+        </script>
+    </body>
+</html>
